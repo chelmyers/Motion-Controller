@@ -214,26 +214,48 @@ $(function(){
   // - @chelmyers
   // HTML5 Canvas Tests for iOS Motion
 
+
   //Variables
+  var mouseMove = false;
+  var initialized  = false;
+  var fist;
   var theCanvas = $("#c");
   var ctx = theCanvas[0].getContext("2d");
   var mouseRad = 5;
   var centerX = $(window).width()/2 - mouseRad/2;
   var centerY = $(window).height()/2 - mouseRad/2;
   var mouse = {x:centerX, y:centerY, rad:mouseRad, color:"rgb(0, 187, 222)"};
+  var dragging = false;
+  var dragHoldX;
+  var dragHoldY;
+  var drawing = false;
+  var shapes = [];
+  var clickX = new Array();
+  var clickY = new Array();
+  var clickDrag = new Array();
 
+ initShapes();
 
-  ctx.canvas.width  = window.innerWidth;
-  ctx.canvas.height = window.innerHeight;
-
-  drawScreen();
-
-  function drawScreen() {
-    ctx.fillStyle = "#eee";
-    ctx.fillRect(0,0, ctx.canvas.width, ctx.canvas.height);
-    console.log('canvas drawn');
+  function initShapes() {
+    // shapes = testShapes;
+    windowResize();
+    drawScreen();
     drawMouse();
   }
+
+
+  function drawShapes() {
+    for (var i=0; i < shapes.length; i++) {
+      x = shapes[i].x;
+      y = shapes[i].y;
+      ctx.fillStyle = shapes[i].color;
+      ctx.beginPath();
+
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
 
   function drawMouse() {
     ctx.fillStyle = mouse.color;
@@ -242,6 +264,68 @@ $(function(){
     ctx.closePath();
     ctx.fill();
   }
+
+
+  function drawScreen() {
+    windowResize();
+     ctx.fillStyle = "#eee";
+     ctx.fillRect(0,0,theCanvas.width,theCanvas.height);
+     drawShapes();
+    drawMouse();
+    // redraw();
+  }
+
+
+
+  $(window).resize(function(){
+    windowResize();
+  });
+
+
+
+  function windowResize(){
+    theCanvas.width = window.innerWidth;
+    theCanvas.height = window.innerHeight;
+  }
+
+  function hitTest(shape,mx,my) {
+    var dx;
+    var dy;
+    dx = mx - shape.x;
+    dy = my - shape.y;
+
+    //a "hit" will be registered if the distance away from the center is less than the radius of the circular object
+    return (mx >= shape.x && mx <= shape.x + shape.width && my >= shape.y && my <= shape.y + shape.width);
+  }
+
+
+  function RectMouseColliding(mouse,rect){
+    var distX = Math.abs(mouse.x - rect.x-rect.width/2);
+    var distY = Math.abs(mouse.y - rect.y-rect.height/2);
+
+    if (distX > (rect.width/2 + mouse.rad)) { return false; }
+    if (distY > (rect.height/2 + mouse.rad)) { return false; }
+
+    if (distX <= (rect.width/2)) { return true; }
+    if (distY <= (rect.height/2)) { return true; }
+
+    var dx=distX-rect.width/2;
+    var dy=distY-rect.height/2;
+
+    return (dx*dx+dy*dy<=(mouse.rad*mouse.rad));
+  }
+
+
+  function mouseAndCircle(mouse, circle) {
+
+    var dx = mouse.x - circle.x,
+    dy = mouse.y - circle.y,
+    distance = Math.sqrt(dx * dx + dy * dy);
+
+    return (distance <= (mouse.rad + circle.rad));
+
+  };
+
 
   rawRoll = 0;
   rawPitch = 0;
@@ -256,8 +340,8 @@ $(function(){
   isScrolling = false;
 
 
-  X_SPEED = 1;
-  Y_SPEED = width * 1.0 / height;
+  X_SPEED = 0;
+  Y_SPEED = 0;
   DRAG_THRESHOLD = 5;
   SCROLL_SPEED = 60;
 
@@ -282,6 +366,10 @@ $(function(){
     var sY = Math.sin( _y/2 );
     var sZ = Math.sin( _z/2 );
 
+    //
+    // ZXY quaternion construction.
+    //
+
     var w = cX * cY * cZ - sX * sY * sZ;
     var x = sX * cY * cZ - cX * sY * sZ;
     var y = cX * sY * cZ + sX * cY * sZ;
@@ -291,7 +379,12 @@ $(function(){
     newPitch = Math.asin(2.0 * (w * y - z * x));
     newYaw = Math.atan2(2.0 * (w * z + x * beta), 1.0 - 2.0 * (y * y + z * z));
 
+    // newRoll = alpha;
+    // newPitch = beta;
+    // newYaw = gamma;
+
     console.log("x,y,z,w:" + x + " " + y + " " + z + " " + w);
+
 
     roll = newRoll - rollOffset;
     pitch = newPitch - pitchOffset;
@@ -334,9 +427,174 @@ $(function(){
     rawPitch = newPitch;
     rawYaw = newYaw;
 
+
+
+    if(dragging) {
+      // console.log('dragging!');
+      var posX;
+      var posY;
+      var shapeRad = dragCircle.rad;
+      var minX = shapeRad;
+      var maxX = theCanvas.width - shapeRad;
+      var minY = shapeRad;
+      var maxY = theCanvas.height - shapeRad;
+      //getting mouse position correctly
+      var bRect = theCanvas.getBoundingClientRect();
+      mouseX = (mouse.x - bRect.left)*(theCanvas.width/bRect.width);
+      mouseY = (mouse.y - bRect.top)*(theCanvas.height/bRect.height);
+
+      //clamp x and y positions to prevent object from dragging outside of canvas
+      posX = mouseX - dragHoldX;
+      posX = (posX < minX) ? minX : ((posX > maxX) ? maxX : posX);
+      posY = mouseY - dragHoldY;
+      posY = (posY < minY) ? minY : ((posY > maxY) ? maxY : posY);
+
+      // console.log(dragHoldX);
+      dragCircle.x = posX;
+      dragCircle.y = posY;
+
+      // if (dragCircle.x >= (theCanvas.width - 75) && dragCircle.y >= (theCanvas.height - 75) ) {
+      //   dragging = false;
+      //   $('#next').show();
+      // }
+    }
+
+
+    // if ( drawing ) {
+    //   addClick(mouse.x, mouse.y, true);
+    //   $('#next').html('Continue');
+    // }
+
     console.log(mouse.x + " " + mouse.y);
     drawScreen();
   }
+
+  function addClick(x, y, dragging)
+  {
+    clickX.push(x);
+    clickY.push(y);
+    clickDrag.push(dragging);
+  }
+
+  // function redraw(){
+  //   // ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); // Clears the canvas
+  //
+  //   ctx.strokeStyle = "#000";
+  //   ctx.lineJoin = "round";
+  //   ctx.lineWidth = 10;
+  //
+  //   for(var i=0; i < clickX.length; i++) {
+  //     ctx.beginPath();
+  //     if(clickDrag[i] && i){
+  //       ctx.moveTo(clickX[i-1], clickY[i-1]);
+  //     }else{
+  //       ctx.moveTo(clickX[i]-1, clickY[i]);
+  //     }
+  //     ctx.lineTo(clickX[i], clickY[i]);
+  //     ctx.closePath();
+  //     ctx.stroke();
+  //   }
+  // }
+
+  //sound
+  // var obj = document.createElement("audio");
+  // obj.src="a/m/bloop.wav";
+  // obj.volume=0.50;
+  // obj.autoPlay=false;
+  // obj.preLoad=true;
+
+
+  //Clicking
+  // Myo.on('fist', function(){
+  //   console.log('Click!');
+  //   obj.play(); //play sound
+  //
+  //   if ($('body').hasClass('click')){
+  //     for (i=0; i < shapes.length; i++) {
+  //       if	(hitTest(shapes[i], mouse.x, mouse.y)) {
+  //         console.log(shapes[i]);
+  //         shapes.splice(i, 1);
+  //         console.log(shapes[i]);
+  //       }
+  //     }
+  //     drawScreen();
+  //   } else if ($('body').hasClass('scroll')) {
+  //     var scrollTab = shapes[1];
+  //
+  //     console.log(RectMouseColliding(mouse, scrollTab));
+  //     if	(RectMouseColliding(mouse, scrollTab)) {
+  //       console.log('hit');
+  //       fist = true;
+  //     }
+  //
+  //   } else if ($('body').hasClass('drag')) {
+  //     dragCircle = shapes[0];
+  //     console.log('hi');
+  //     if	(mouseAndCircle(mouse, dragCircle)) {
+  //       console.log('dragging = true');
+  //       dragging = true;
+  //       dragHoldX = mouse.x - dragCircle.x;
+  //       dragHoldY = mouse.y - dragCircle.y;
+  //     }
+  //   } else if($('body').hasClass('index')) {
+  //     for (i=0; i < shapes.length; i++) {
+  //       if	(hitTest(shapes[i], mouse.x, mouse.y)) {
+  //         console.log(shapes[i]);
+  //         shapes.splice(i, 1);
+  //         console.log(shapes[i]);
+  //       }
+  //     }
+  //   } else if($('body').hasClass('draw')) {
+  //     drawing = true;
+  //     console.log('drawing  = true');
+  //     ctx.strokeStyle='rgb(0,0,0)';
+  //     ctx.lineWidth = 10;
+  //     ctx.lineJoin = ctx.lineCap = 'round';
+  //     ctx.moveTo(mouse.x, mouse.y);
+  //     console.log('x:' + mouse.x + ", y: " + mouse.y);
+  //   }
+  //
+  // });
+  //
+  //
+  //
+  // Myo.on('fist_off', function(){
+  //   fist = false;
+  //   console.log('fist off');
+  //
+  //   if (dragging) {
+  //     dragging = false;
+  //   }
+  //
+  //   if (drawing) {
+  //     drawing = false;
+  //   }
+  //
+  //
+  //
+  // });
+
+  //Starting Mouse on Spacebar
+  // $(document).keyup(function(evt) {
+  //   if (evt.keyCode == 32) {
+  //     if(!initialized) {
+  //       initialized = true;
+  //       startMyoMouse();
+  //     }
+  //   }
+  // });
+
+  //Start mouse and zero orientation
+  // function startMyoMouse() {
+  //   mouseMove = true;
+  //   console.log("Mouse is moving");
+  //   Myo.myos[0].zeroOrientation();
+  //   $('.startInstruct').hide();
+  // }
+
+
+
+
 
 
 });
